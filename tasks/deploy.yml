@@ -1,9 +1,14 @@
 ---
+# Mesmo slug do tasks/seed.yml: os facts do play anterior não chegam aqui, este
+# play roda num host adicionado por add_host.
+- name: "Set the VM slug"
+  set_fact:
+    vm_slug: "{{ (vm_hostname | default(vm_name)) | regex_replace('[^A-Za-z0-9._-]+', '-') | regex_replace('^-+|-+$', '') | lower }}"
+
 - name: "Set dynamic vars"
   set_fact:
-    # Mesmo slug/nome gerados pelo tasks/seed.yml (os facts do play anterior não
-    # chegam aqui: este play roda num host adicionado por add_host).
-    autoinstall_iso: "{{ (vm_hostname | default(vm_name)) | regex_replace('[^A-Za-z0-9._-]+', '-') | regex_replace('^-+|-+$', '') | lower }}-autoinstall.iso"
+    autoinstall_iso: '{{ vm_slug }}-autoinstall.iso'
+    build_dir: 'build/{{ vm_slug }}'
     esxi_login: &esxi_login
       - hostname: '{{ vcenter_address }}'
       - username: '{{ vcenter_login }}'
@@ -209,6 +214,20 @@
     state: absent
   delegate_to: '{{ vcenter_address }}'
   ignore_errors: true
+
+# A ISO de autoinstall e a árvore extraída são descartáveis — a ISO é regravada a
+# cada deploy porque carrega o hostname, a senha e a chave da VM. Só a ISO
+# original continua em cache (iso_cache/). Use -e keep_build_files=true para
+# manter tudo e depurar o seed.
+- name: Remove the local autoinstall artifacts
+  ansible.builtin.file:
+    path: '{{ item }}'
+    state: absent
+  loop:
+    - '{{ autoinstall_iso }}'
+    - '{{ build_dir }}'
+  delegate_to: localhost
+  when: not (keep_build_files | default(false) | bool)
 
 - name: "Set new ubuntu inventory host group"
   set_fact:

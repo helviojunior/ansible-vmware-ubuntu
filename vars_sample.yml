@@ -32,3 +32,10 @@ vm_ssh_private_key_file: ""
 # Instalar as dependências python do controller (jmespath, netaddr, requests).
 # Deixe false quando o controller já as tiver (ex.: container do vm_manager).
 install_controller_deps: false
+
+# Ao final do deploy o playbook apaga a ISO de autoinstall e a árvore extraída,
+# mantendo em cache apenas a ISO original. true mantém tudo (para depurar o seed).
+keep_build_files: false
+
+# Diretório de cache da ISO original.
+iso_cache_dir: "iso_cache"

@@ -98,8 +98,11 @@ Detalhes que valem a pena saber:
 - **Nomes de arquivo**: derivam do slug do `vm_hostname` (`Teste 001` →
   `teste-001`), então espaço e acento no nome da VM não vazam para os comandos
   do xorriso nem para o caminho no datastore.
-- **Espaço em disco** no controller: ISO original em cache (~2 GB) + extração
-  (~2 GB) + ISO gerada (~2 GB) por deploy, em `iso_cache/` e `build/<vm_name>/`.
+- **Espaço em disco** no controller: durante o deploy convivem a ISO original em
+  cache, a árvore extraída e a ISO gerada (~3 GB cada, nas ISOs recentes). Ao
+  final o playbook apaga `build/<slug>/` e a ISO de autoinstall — só a ISO
+  original permanece em `iso_cache/`, para os próximos deploys não a baixarem de
+  novo. Rode com `-e keep_build_files=true` para manter tudo e depurar o seed.
 
 ## Common error
 
