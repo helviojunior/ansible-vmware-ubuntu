@@ -16,8 +16,12 @@ confirmação antes de mexer no disco.
 ## Installing
 
 ```bash
-ansible-galaxy collection install community.vmware
+ansible-galaxy collection install community.vmware vmware.vmware
 ```
+
+A `vmware.vmware` já vem como dependência da `community.vmware`, mas instalar as
+duas explicitamente evita ficar sem ela quando a `community.vmware` já estava
+instalada de antes (o `ansible-galaxy` pula o que já existe).
 
 O `xorriso` é obrigatório (extrai e regrava a ISO):
 

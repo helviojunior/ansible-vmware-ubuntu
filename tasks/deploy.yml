@@ -98,7 +98,7 @@
   delegate_to: '{{ vcenter_address }}'
 
 - name: Create a new Ubuntu VM
-  vmware_guest:
+  community.vmware.vmware_guest:
     <<: *esxi_login
     folder: /
     name: '{{ vm_name }}'
@@ -110,7 +110,6 @@
         state: present
         type: iso
         iso_path: '[{{ temp_datastore }}] {{ file_path }}'
-        start_connected: true
     disk:
       - size_gb: '{{ vm_disk_gb }}'
         type: thin
@@ -130,7 +129,7 @@
 # cai no CD; depois da instalação ela passa a bootar do disco sem depender de o
 # instalador ejetar a mídia.
 - name: Change virtual machine's boot order and related parameters
-  vmware_guest_boot_manager:
+  community.vmware.vmware_guest_boot_manager:
     hostname: '{{ vcenter_address }}'
     username: '{{ vcenter_login }}'
     password: '{{ vcenter_password }}'
@@ -149,8 +148,10 @@
   delegate_to: '{{ vcenter_address }}'
   register: vm_boot_order
 
+# vmware_guest_powerstate saiu de cena na community.vmware 7.0.0; a vmware.vmware
+# ja vem instalada como dependencia dela.
 - name: Power-On the virtual machine
-  vmware_guest_powerstate:
+  vmware.vmware.vm_powerstate:
     <<: *esxi_login
     name: '{{ vm_name }}'
     state: powered-on
@@ -161,7 +162,7 @@
 # diz que a instalação acabou. O que separa os dois é o hostname reportado pelo
 # guest: no live é 'ubuntu-server', no sistema instalado é o nosso vm_hostname.
 - name: Wait for the autoinstall to finish (up to 60 min)
-  vmware_guest_info:
+  community.vmware.vmware_guest_info:
     <<: *esxi_login
     name: '{{ vm_name }}'
   delegate_to: '{{ vcenter_address }}'
@@ -175,7 +176,7 @@
         == (vm_hostname | default(vm_name)) | lower
 
 - name: Wait for the VM's IP Address via VMware tools
-  vmware_guest_info:
+  community.vmware.vmware_guest_info:
     <<: *esxi_login
     name: '{{ vm_name }}'
   delegate_to: '{{ vcenter_address }}'
@@ -191,7 +192,7 @@
 - debug: msg="IP Address - {{ ubuntu_ip }}"
 
 - name: Detach CDROM
-  vmware_guest:
+  community.vmware.vmware_guest:
     <<: *esxi_login
     folder: /
     name: '{{ vm_name }}'
@@ -201,7 +202,6 @@
         unit_number: 0
         state: present
         type: none
-        start_connected: false
   delegate_to: '{{ vcenter_address }}'
   register: deploy_vm
 
