@@ -88,8 +88,16 @@ Detalhes que valem a pena saber:
 - **Fim da instalação**: o instalador live também roda o `open-vm-tools`, então
   "tools disponível" não significa instalação concluída. O playbook espera o
   guest reportar o `vm_hostname` (no live o hostname é `ubuntu-server`).
+- **Regravação da ISO**: as opções vêm do próprio xorriso
+  (`-report_el_torito as_mkisofs` sobre a ISO original), o que preserva volume
+  id, El Torito BIOS, partição EFI e system area. Referenciar o
+  `boot_hybrid.img` pelo caminho extraído não funciona: a partir do 24.04 ele
+  não existe como arquivo dentro da ISO, mora na system area.
 - **Volume id**: a ISO regravada preserva o rótulo da original — o `casper`
   procura o sistema live pelo rótulo do CD.
+- **Nomes de arquivo**: derivam do slug do `vm_hostname` (`Teste 001` →
+  `teste-001`), então espaço e acento no nome da VM não vazam para os comandos
+  do xorriso nem para o caminho no datastore.
 - **Espaço em disco** no controller: ISO original em cache (~2 GB) + extração
   (~2 GB) + ISO gerada (~2 GB) por deploy, em `iso_cache/` e `build/<vm_name>/`.
 

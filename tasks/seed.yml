@@ -7,13 +7,17 @@
   set_fact:
     iso_name: "{{ vm_iso if (vm_iso | default('')) != '' else (vm_iso_url | urlsplit('path') | basename) }}"
     cache_dir: "{{ iso_cache_dir | default('iso_cache') }}"
-    build_dir: "build/{{ vm_name }}"
+    # Nomes de arquivo/diretório saem do slug, não do vm_name: nome de VM aceita
+    # espaço e acento, que quebram os comandos do xorriso e o caminho no datastore.
+    vm_slug: "{{ (vm_hostname | default(vm_name)) | regex_replace('[^A-Za-z0-9._-]+', '-') | regex_replace('^-+|-+$', '') | lower }}"
 
 - name: Seed | Set derived paths
   set_fact:
     iso_src: "{{ cache_dir }}/{{ iso_name }}"
-    iso_root: "build/{{ vm_name }}/iso_root"
-    autoinstall_iso: "{{ vm_name }}-autoinstall.iso"
+    build_dir: "build/{{ vm_slug }}"
+    iso_root: "build/{{ vm_slug }}/iso_root"
+    opts_file: "build/{{ vm_slug }}/mkisofs_opts.txt"
+    autoinstall_iso: "{{ vm_slug }}-autoinstall.iso"
 
 - name: Seed | Create local directories
   ansible.builtin.file:
@@ -95,21 +99,50 @@
   changed_when: false
   delegate_to: localhost
 
+# O próprio xorriso devolve as opções com que a ISO original foi gerada
+# (-report_el_torito as_mkisofs): volume id, El Torito BIOS, a partição EFI e a
+# system area. É o único jeito de regravar sem perder boot — a partir do 24.04 o
+# boot_hybrid.img não existe como arquivo dentro da ISO, ele mora na system area,
+# então referenciá-lo pelo caminho extraído falha.
+- name: Seed | Read the original mkisofs options
+  ansible.builtin.shell: |
+    xorriso -indev "{{ iso_src }}" -report_el_torito as_mkisofs 2>/dev/null \
+      | grep -v '^ *#' > "{{ opts_file }}" || true
+  register: mkisofs_opts
+  changed_when: false
+  delegate_to: localhost
+
+- name: Seed | Check the reported options
+  ansible.builtin.shell: |
+    test -s "{{ opts_file }}" && grep -q -- '-b ' "{{ opts_file }}"
+  register: opts_ok
+  changed_when: false
+  failed_when: false
+  delegate_to: localhost
+
 # O volume id precisa ser preservado: o casper procura o sistema live pelo
 # rótulo do CD, e uma ISO regravada com outro nome não sobe.
 - name: Seed | Build the autoinstall ISO
   ansible.builtin.shell: |
     set -e
     rm -f "{{ autoinstall_iso }}"
+    {% if opts_ok.rc == 0 %}
+    # Reaproveita as opções da ISO original (BIOS + UEFI). O eval é necessário
+    # porque elas vêm com aspas; os caminhos vão requotados por dentro.
+    eval xorriso -as mkisofs $(cat "{{ opts_file }}") \
+      -o "'{{ autoinstall_iso }}'" "'{{ iso_root }}'"
+    {% else %}
+    # Sem o relatório: El Torito BIOS apenas — suficiente para a VM, que é
+    # criada com boot_firmware bios e boota do CD virtual.
     xorriso -as mkisofs -r -V "{{ iso_label.stdout | trim | default('Ubuntu-Server', true) }}" \
       -J -l \
       -b boot/grub/i386-pc/eltorito.img \
       -c boot.catalog \
       -no-emul-boot -boot-load-size 4 -boot-info-table \
       --grub2-boot-info \
-      --grub2-mbr "{{ iso_root }}/boot/grub/i386-pc/boot_hybrid.img" \
       -o "{{ autoinstall_iso }}" \
       "{{ iso_root }}"
+    {% endif %}
   delegate_to: localhost
 
 - name: Seed | Check the generated ISO

@@ -1,9 +1,9 @@
 ---
 - name: "Set dynamic vars"
   set_fact:
-    # Mesmo nome gerado pelo tasks/seed.yml (os facts do play anterior não
+    # Mesmo slug/nome gerados pelo tasks/seed.yml (os facts do play anterior não
     # chegam aqui: este play roda num host adicionado por add_host).
-    autoinstall_iso: '{{ vm_name }}-autoinstall.iso'
+    autoinstall_iso: "{{ (vm_hostname | default(vm_name)) | regex_replace('[^A-Za-z0-9._-]+', '-') | regex_replace('^-+|-+$', '') | lower }}-autoinstall.iso"
     esxi_login: &esxi_login
       - hostname: '{{ vcenter_address }}'
       - username: '{{ vcenter_login }}'
