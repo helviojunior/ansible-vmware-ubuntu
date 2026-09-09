@@ -32,6 +32,9 @@ vm_ssh_public_key: ""
 # de SSH na VM recém-instalada ao final do deploy.
 vm_ssh_private_key_file: ""
 
+# Desliga o IPv6 no sistema instalado (sysctl, via late-commands do autoinstall).
+disable_ipv6: true
+
 # Instalar as dependências python do controller (jmespath, netaddr, requests).
 # Deixe false quando o controller já as tiver (ex.: container do vm_manager).
 install_controller_deps: false

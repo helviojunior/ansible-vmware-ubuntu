@@ -67,6 +67,7 @@ O IP da VM fica em `output/<vm_name>_ip.txt`.
 | `vm_password_hash` | hash crypt(3)/SHA-512 da senha. Vazio = gerado de `vm_password` |
 | `vm_ssh_public_key` | chave pública autorizada para `vm_username` **e root** |
 | `vm_ssh_private_key_file` | opcional: liga o smoke test de SSH ao final |
+| `disable_ipv6` | desliga o IPv6 no sistema instalado (padrão: `true`) |
 | `install_controller_deps` | `true` instala as deps python do controller |
 
 ## O que a VM entrega
@@ -75,6 +76,9 @@ O IP da VM fica em `output/<vm_name>_ip.txt`.
   (`/etc/sudoers.d/90-vmmanager`);
 - `vm_ssh_public_key` no `authorized_keys` do usuário e do root;
 - `open-vm-tools` instalado — é por ele que o vCenter reporta o IP do guest;
+- IPv6 desligado por sysctl (`/etc/sysctl.d/99-disable-ipv6.conf`), para o
+  VMware Tools não reportar um endereço IPv6 como principal do guest e nada
+  subir escutando em `::` sem querer. `-e disable_ipv6=false` mantém o IPv6;
 - `/var/lib/cloud/instance/boot-finished` (criado pelo cloud-init do sistema
   instalado no primeiro boot; o `late-commands` cobre o caso de não haver
   cloud-init). É o marcador que automações costumam usar para saber que a

@@ -33,6 +33,12 @@ autoinstall:
     - openssh-server
 
   late-commands:
+{% if disable_ipv6 | default(true) %}
+    # IPv6 desligado já na instalação: sem ele o VMware Tools não tem como
+    # reportar um endereço IPv6 como principal do guest, e nada sobe escutando
+    # em :: sem querer. Passe -e disable_ipv6=false para manter o IPv6.
+    - 'printf "net.ipv6.conf.all.disable_ipv6 = 1\nnet.ipv6.conf.default.disable_ipv6 = 1\nnet.ipv6.conf.lo.disable_ipv6 = 1\n" > /target/etc/sysctl.d/99-disable-ipv6.conf'
+{% endif %}
     # sudo sem senha para o usuário criado (os playbooks usam `become: yes`).
     - "echo '{{ vm_username }} ALL=(ALL) NOPASSWD:ALL' > /target/etc/sudoers.d/90-vmmanager"
     - "chmod 440 /target/etc/sudoers.d/90-vmmanager"

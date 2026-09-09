@@ -196,7 +196,9 @@
   register: vmfacts
   retries: 30
   delay: 15
-  until: (vmfacts.instance.guest.ipAddress | default('', true)) != ''
+  until: >-
+    (vmfacts.instance.guest.ipAddress | default('', true)) != ''
+    and ':' not in (vmfacts.instance.guest.ipAddress | default('', true))
 
 - name: Get IP
   set_fact:
