@@ -1,0 +1,74 @@
+---
+# Instala um Ubuntu Server do zero em VMware (ESXi/vCenter) usando o autoinstall
+# (subiquity + cloud-init NoCloud). A ISO oficial é remasterizada com o seed
+# (user-data/meta-data) e com `autoinstall` na linha de comando do kernel, que é
+# o que dispensa a confirmação interativa do instalador.
+#
+# Uso manual:
+#   cp vars_sample.yml vars.yml && $EDITOR vars.yml
+#   ansible-playbook -i <ip-do-esxi>, deploy_ubuntu.yml -e @vars.yml
+#
+# O vm_manager chama com -e @vars_runtime.yml (mesmas variáveis).
+- hosts: all
+  gather_facts: false
+
+  vars:
+    ansible_python_interpreter: "/usr/bin/python3"
+
+  pre_tasks:
+    # vars.yml é opcional: o vm_manager passa as variáveis por -e @arquivo.
+    - name: "Load vars.yml when present"
+      ansible.builtin.include_vars: '{{ item }}'
+      with_first_found:
+        - files:
+            - vars.yml
+            - vars.yaml
+          skip: true
+
+  tasks:
+    - include_tasks: 'tasks/base.yml'
+    - include_tasks: 'tasks/seed.yml'
+
+    - name: "Set VCenter Addr"
+      set_fact:
+        vcenter_address: '{{ hostvars[inventory_hostname]["inventory_hostname"] }}'
+      when: vcenter_address is undefined
+
+    - name: Add vSphere
+      add_host:
+        name: '{{ vcenter_address }}'
+        group: "vSphere"
+
+- hosts: 'vSphere'
+  gather_facts: false
+
+  vars:
+    ansible_python_interpreter: "/usr/bin/python3"
+    vcenter_address: '{{ hostvars[inventory_hostname]["inventory_hostname"] }}'
+
+  pre_tasks:
+    # Este play roda num host novo (add_host), que não herda os facts do
+    # anterior — as vars precisam ser carregadas de novo.
+    - name: "Load vars.yml when present"
+      ansible.builtin.include_vars: '{{ item }}'
+      with_first_found:
+        - files:
+            - vars.yml
+            - vars.yaml
+          skip: true
+
+  tasks:
+    - include_tasks: 'tasks/deploy.yml'
+
+# Smoke test: só roda quando vm_ssh_private_key_file foi informado (o grupo fica
+# vazio caso contrário, e o play é pulado).
+- hosts: "new_ubuntu"
+  gather_facts: true
+
+  tasks:
+    - name: Running uname (just to test the SSH connection)
+      ansible.builtin.command: uname -a
+      register: uname_out
+      changed_when: false
+
+    - debug: msg="{{ uname_out['stdout_lines'] }}"

@@ -1,0 +1,34 @@
+# VCenter/VMWare information
+vcenter_login: ""
+vcenter_password: ""
+vcenter_datacenter: "ha-datacenter"
+vcenter_datastore: "datastore1"
+
+# Ubuntu Server ISO (live server / autoinstall)
+vm_iso: "ubuntu-22.04.5-live-server-amd64.iso"
+vm_iso_url: "https://releases.ubuntu.com/22.04/ubuntu-22.04.5-live-server-amd64.iso"
+
+# VM data
+vm_name: testvm
+vm_hostname: testvm
+vm_network: "VM Network"
+vm_disk_gb: 40
+vm_memory_mb: 2048
+vm_num_cpus: 2
+
+# Identidade criada pelo autoinstall
+vm_username: "ubuntu"
+vm_password: "P@ssw0rd"
+# Hash crypt(3)/SHA-512 da senha. Vazio = gerado a partir de vm_password.
+vm_password_hash: ""
+
+# Chave pública autorizada para vm_username e root (obrigatória p/ automação)
+vm_ssh_public_key: ""
+
+# Chave privada correspondente. Quando informada, o playbook faz um smoke test
+# de SSH na VM recém-instalada ao final do deploy.
+vm_ssh_private_key_file: ""
+
+# Instalar as dependências python do controller (jmespath, netaddr, requests).
+# Deixe false quando o controller já as tiver (ex.: container do vm_manager).
+install_controller_deps: false

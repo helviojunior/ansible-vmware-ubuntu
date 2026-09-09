@@ -1,0 +1,127 @@
+---
+# Monta a ISO de autoinstall: baixa a ISO oficial do Ubuntu Server, extrai,
+# injeta o seed NoCloud (user-data/meta-data) e acrescenta `autoinstall` na
+# linha de comando do kernel no grub.cfg — sem esse parâmetro o instalador para
+# num prompt pedindo confirmação antes de mexer no disco.
+- name: Seed | Set dynamic vars
+  set_fact:
+    iso_name: "{{ vm_iso if (vm_iso | default('')) != '' else (vm_iso_url | urlsplit('path') | basename) }}"
+    cache_dir: "{{ iso_cache_dir | default('iso_cache') }}"
+    build_dir: "build/{{ vm_name }}"
+
+- name: Seed | Set derived paths
+  set_fact:
+    iso_src: "{{ cache_dir }}/{{ iso_name }}"
+    iso_root: "build/{{ vm_name }}/iso_root"
+    autoinstall_iso: "{{ vm_name }}-autoinstall.iso"
+
+- name: Seed | Create local directories
+  ansible.builtin.file:
+    path: '{{ item }}'
+    state: directory
+  loop:
+    - '{{ cache_dir }}'
+    - '{{ build_dir }}'
+  delegate_to: localhost
+
+- name: Seed | Download the Ubuntu Server ISO
+  ansible.builtin.get_url:
+    url: '{{ vm_iso_url }}'
+    dest: '{{ iso_src }}'
+    timeout: 120
+  delegate_to: localhost
+  when: vm_iso_url | default('') != ''
+
+- name: Seed | Check the source ISO
+  ansible.builtin.stat:
+    path: '{{ iso_src }}'
+  register: iso_stat
+  delegate_to: localhost
+
+- name: Seed | Fail when the source ISO is missing
+  ansible.builtin.fail:
+    msg: 'ISO não encontrada em {{ iso_src }} — informe vm_iso_url ou deixe o arquivo no cache.'
+  when: not iso_stat.stat.exists
+
+- name: Seed | Extract the ISO
+  ansible.builtin.shell: |
+    set -e
+    rm -rf "{{ iso_root }}"
+    xorriso -osirrox on -indev "{{ iso_src }}" -extract / "{{ iso_root }}"
+    chmod -R u+w "{{ iso_root }}"
+  args:
+    creates: '{{ iso_root }}/boot/grub/grub.cfg'
+  delegate_to: localhost
+
+- name: Seed | Create the nocloud directory
+  ansible.builtin.file:
+    path: '{{ iso_root }}/nocloud'
+    state: directory
+    mode: '0755'
+  delegate_to: localhost
+
+- name: Seed | Render the autoinstall seed
+  ansible.builtin.template:
+    src: '../templates/{{ item }}.j2'
+    dest: '{{ iso_root }}/nocloud/{{ item }}'
+    mode: '0644'
+  loop:
+    - user-data
+    - meta-data
+  delegate_to: localhost
+
+- name: Seed | Add autoinstall to the kernel command line
+  ansible.builtin.replace:
+    path: '{{ iso_root }}/boot/grub/grub.cfg'
+    # Os parâmetros entram ANTES do '---' (o que vem depois é do kernel/init).
+    # O ';' vai escapado porque no grub ele separa comandos.
+    regexp: '^(?!.*autoinstall)(\s*linux\s+/casper/vmlinuz.*?)(---.*)$'
+    replace: '\1autoinstall ds=nocloud\;s=/cdrom/nocloud/ \2'
+  delegate_to: localhost
+
+- name: Seed | Shorten the GRUB menu timeout
+  ansible.builtin.replace:
+    path: '{{ iso_root }}/boot/grub/grub.cfg'
+    regexp: '^set timeout=.*$'
+    replace: 'set timeout=3'
+  delegate_to: localhost
+
+- name: Seed | Read the original volume id
+  ansible.builtin.shell: |
+    set -e
+    xorriso -indev "{{ iso_src }}" -pvd_info 2>/dev/null \
+      | sed -n 's/^Volume Id *: *//p' | head -n1
+  register: iso_label
+  changed_when: false
+  delegate_to: localhost
+
+# O volume id precisa ser preservado: o casper procura o sistema live pelo
+# rótulo do CD, e uma ISO regravada com outro nome não sobe.
+- name: Seed | Build the autoinstall ISO
+  ansible.builtin.shell: |
+    set -e
+    rm -f "{{ autoinstall_iso }}"
+    xorriso -as mkisofs -r -V "{{ iso_label.stdout | trim | default('Ubuntu-Server', true) }}" \
+      -J -l \
+      -b boot/grub/i386-pc/eltorito.img \
+      -c boot.catalog \
+      -no-emul-boot -boot-load-size 4 -boot-info-table \
+      --grub2-boot-info \
+      --grub2-mbr "{{ iso_root }}/boot/grub/i386-pc/boot_hybrid.img" \
+      -o "{{ autoinstall_iso }}" \
+      "{{ iso_root }}"
+  delegate_to: localhost
+
+- name: Seed | Check the generated ISO
+  ansible.builtin.stat:
+    path: '{{ autoinstall_iso }}'
+  register: autoinstall_iso_stat
+  delegate_to: localhost
+
+- name: Seed | Fail when the ISO was not generated
+  ansible.builtin.fail:
+    msg: 'A ISO de autoinstall não foi gerada ({{ autoinstall_iso }}).'
+  when: not autoinstall_iso_stat.stat.exists
+
+- debug:
+    msg: 'ISO de autoinstall pronta: {{ autoinstall_iso }} ({{ (autoinstall_iso_stat.stat.size / 1024 / 1024) | round | int }} MB)'

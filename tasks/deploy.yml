@@ -1,0 +1,241 @@
+---
+- name: "Set dynamic vars"
+  set_fact:
+    # Mesmo nome gerado pelo tasks/seed.yml (os facts do play anterior não
+    # chegam aqui: este play roda num host adicionado por add_host).
+    autoinstall_iso: '{{ vm_name }}-autoinstall.iso'
+    esxi_login: &esxi_login
+      - hostname: '{{ vcenter_address }}'
+      - username: '{{ vcenter_login }}'
+      - password: '{{ vcenter_password }}'
+      - datacenter: '{{ vcenter_datacenter }}'
+      - validate_certs: no
+
+- debug: msg="vSphere IP {{ vcenter_address }}"
+
+- name: Add vSphere
+  add_host:
+    name: '{{ vcenter_address }}'
+    connection: local
+    ansible_connection: local
+
+- name: Gather vSphere schema information
+  community.vmware.vmware_datacenter_info:
+    <<: *esxi_login
+    schema: vsphere
+    properties:
+      - configStatus
+      - overallStatus
+  delegate_to: '{{ vcenter_address }}'
+  register: datacenter_info
+
+- name: Check VMWare datacenter status
+  fail: msg="Vmware datacenter is not Green"
+  when: "datacenter_info['datacenter_info'] is not defined or datacenter_info['datacenter_info'][0]['overallStatus'] is not defined or datacenter_info['datacenter_info'][0]['overallStatus'] != 'green'"
+
+- name: Gather datastore information
+  community.vmware.vmware_datastore_info:
+    <<: *esxi_login
+    schema: vsphere
+    properties:
+      - name
+      - overallStatus
+  delegate_to: '{{ vcenter_address }}'
+  register: datastore_info
+
+- name: Filter temp datastore
+  set_fact:
+    temp_datastore: "{{ datastore_info.datastores | json_query(jmesquery) | first }}"
+  vars:
+    jmesquery: "[? overallStatus==`green` && name==`datastore1`].name"
+
+- name: Filter selected datastore
+  set_fact:
+    selected_datastore: "{{ datastore_info.datastores | json_query(jmesquery) | first }}"
+  vars:
+    jmesquery: "[? overallStatus==`green` && name==`{{ vcenter_datastore }}`].name"
+
+- name: Check temp datastore status
+  fail: msg="Vmware datastore {{ temp_datastore }} not exists or is not green"
+  when: "temp_datastore is not defined or temp_datastore|length == 0"
+
+- name: Check selected datastore status
+  fail: msg="Vmware datastore {{ selected_datastore }} not exists or is not green"
+  when: "selected_datastore is not defined or selected_datastore|length == 0"
+
+- name: Create ISO directory at datastore {{ temp_datastore }}
+  community.vmware.vsphere_file:
+    <<: *esxi_login
+    datastore: '{{ temp_datastore }}'
+    path: ISO
+    state: directory
+  delegate_to: '{{ vcenter_address }}'
+
+- name: Set file path
+  set_fact:
+    file_path: 'ISO/{{ autoinstall_iso }}'
+
+# A ISO é regravada a cada deploy (o seed carrega hostname, senha e chave da VM),
+# então ela sempre sobe — diferente da ISO original, que fica em cache local.
+- name: Copy the autoinstall ISO to {{ temp_datastore }}/ISO folder
+  community.vmware.vsphere_copy:
+    <<: *esxi_login
+    datastore: '{{ temp_datastore }}'
+    src: '{{ autoinstall_iso }}'
+    path: '{{ file_path }}'
+  delegate_to: '{{ vcenter_address }}'
+
+- name: Check uploaded ISO file
+  community.vmware.vsphere_file:
+    <<: *esxi_login
+    datastore: '{{ temp_datastore }}'
+    path: '{{ file_path }}'
+    state: file
+  delegate_to: '{{ vcenter_address }}'
+
+- name: Create a new Ubuntu VM
+  vmware_guest:
+    <<: *esxi_login
+    folder: /
+    name: '{{ vm_name }}'
+    state: present
+    guest_id: ubuntu64Guest
+    cdrom:
+      - controller_number: 0
+        unit_number: 0
+        state: present
+        type: iso
+        iso_path: '[{{ temp_datastore }}] {{ file_path }}'
+        start_connected: true
+    disk:
+      - size_gb: '{{ vm_disk_gb }}'
+        type: thin
+        datastore: '{{ selected_datastore }}'
+    hardware:
+      memory_mb: '{{ vm_memory_mb }}'
+      num_cpus: '{{ vm_num_cpus }}'
+      scsi: lsilogicsas
+    networks:
+      - name: '{{ vm_network }}'
+        device_type: vmxnet3
+    wait_for_ip_address: no
+  delegate_to: '{{ vcenter_address }}'
+  register: deploy_vm
+
+# disk antes de cdrom: no primeiro boot o disco está vazio (sem MBR) e a BIOS
+# cai no CD; depois da instalação ela passa a bootar do disco sem depender de o
+# instalador ejetar a mídia.
+- name: Change virtual machine's boot order and related parameters
+  vmware_guest_boot_manager:
+    hostname: '{{ vcenter_address }}'
+    username: '{{ vcenter_login }}'
+    password: '{{ vcenter_password }}'
+    validate_certs: no
+    name: '{{ vm_name }}'
+    boot_delay: 1000
+    enter_bios_setup: False
+    boot_retry_enabled: True
+    boot_retry_delay: 20000
+    boot_firmware: bios
+    secure_boot_enabled: False
+    boot_order:
+      - disk
+      - cdrom
+      - ethernet
+  delegate_to: '{{ vcenter_address }}'
+  register: vm_boot_order
+
+- name: Power-On the virtual machine
+  vmware_guest_powerstate:
+    <<: *esxi_login
+    name: '{{ vm_name }}'
+    state: powered-on
+  delegate_to: '{{ vcenter_address }}'
+  register: powerstate
+
+# O instalador live também roda o open-vm-tools, então esperar "tools ok" não
+# diz que a instalação acabou. O que separa os dois é o hostname reportado pelo
+# guest: no live é 'ubuntu-server', no sistema instalado é o nosso vm_hostname.
+- name: Wait for the autoinstall to finish (up to 60 min)
+  vmware_guest_info:
+    <<: *esxi_login
+    name: '{{ vm_name }}'
+  delegate_to: '{{ vcenter_address }}'
+  register: vmfacts
+  retries: 240
+  delay: 15
+  until: >-
+    vmfacts['instance'] is defined
+    and vmfacts['instance']['hostname'] is defined
+    and vmfacts['instance']['hostname'] | default('') | lower
+        == (vm_hostname | default(vm_name)) | lower
+
+- name: Wait for the VM's IP Address via VMware tools
+  vmware_guest_info:
+    <<: *esxi_login
+    name: '{{ vm_name }}'
+  delegate_to: '{{ vcenter_address }}'
+  register: vmfacts
+  retries: 30
+  delay: 15
+  until: vmfacts['instance'] is defined and vmfacts['instance']['ipv4'] is defined and vmfacts['instance']['ipv4'] != ''
+
+- name: Get IP
+  set_fact:
+    ubuntu_ip: "{{ vmfacts['instance']['ipv4'] }}"
+
+- debug: msg="IP Address - {{ ubuntu_ip }}"
+
+- name: Detach CDROM
+  vmware_guest:
+    <<: *esxi_login
+    folder: /
+    name: '{{ vm_name }}'
+    state: present
+    cdrom:
+      - controller_number: 0
+        unit_number: 0
+        state: present
+        type: none
+        start_connected: false
+  delegate_to: '{{ vcenter_address }}'
+  register: deploy_vm
+
+- name: Remove the autoinstall ISO from the datastore
+  community.vmware.vsphere_file:
+    <<: *esxi_login
+    datastore: '{{ temp_datastore }}'
+    path: '{{ file_path }}'
+    state: absent
+  delegate_to: '{{ vcenter_address }}'
+  ignore_errors: true
+
+- name: "Set new ubuntu inventory host group"
+  set_fact:
+    host_group: 'new_ubuntu'
+  when: host_group is not defined or host_group == ''
+
+# Só entra no inventário quando há chave privada: sem ela o play de teste não
+# teria como autenticar (o vm_manager segue com os seus próprios playbooks).
+- name: Add new VM Ubuntu to Ansible Hosts
+  add_host:
+    name: '{{ ubuntu_ip }}'
+    group: '{{ host_group }}'
+    ansible_connection: ssh
+    ansible_user: '{{ vm_username }}'
+    ansible_ssh_private_key_file: '{{ vm_ssh_private_key_file }}'
+    ansible_ssh_common_args: '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'
+    ansible_python_interpreter: "/usr/bin/python3"
+  when: vm_ssh_private_key_file | default('') != ''
+
+- name: Create local directory 'output'
+  ansible.builtin.file:
+    path: output
+    state: directory
+  delegate_to: localhost
+
+- name: Save host IP
+  copy:
+    dest: "output/{{ vm_name }}_ip.txt"
+    content: "{{ ubuntu_ip }}"
+  delegate_to: localhost

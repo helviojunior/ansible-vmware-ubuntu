@@ -1,0 +1,49 @@
+---
+# Dependências do controller (a máquina que roda o ansible).
+#
+# Por padrão nada é instalado: o container do vm_manager já traz o pyvmomi
+# (fork com o fix da licença free do ESXi), o jmespath e o requests. Para uma
+# estação limpa, rode com -e install_controller_deps=true.
+- name: Base | Install controller python packages
+  ansible.builtin.pip:
+    state: present
+    name:
+      - jmespath
+      - netaddr
+      - requests
+  delegate_to: localhost
+  when: install_controller_deps | default(false) | bool
+
+- name: Base | Check required variables
+  ansible.builtin.assert:
+    that:
+      - vcenter_login | default('') != ''
+      - vcenter_password | default('') != ''
+      - vm_name | default('') != ''
+      - vm_username | default('') != ''
+      - vm_iso_url | default('') != '' or vm_iso | default('') != ''
+    fail_msg: >-
+      Informe ao menos vcenter_login, vcenter_password, vm_name, vm_username e
+      a ISO (vm_iso_url ou vm_iso). Veja o vars_sample.yml.
+
+- name: Base | Warn when no SSH public key was provided
+  ansible.builtin.debug:
+    msg: >-
+      ATENÇÃO: vm_ssh_public_key está vazio — a VM ficará acessível apenas por
+      senha e a automação posterior (ansible por chave) não vai funcionar.
+  when: vm_ssh_public_key | default('') == ''
+
+- name: Base | Locate the ISO authoring tool
+  ansible.builtin.command: 'sh -c "command -v xorriso || true"'
+  register: xorriso_bin
+  changed_when: false
+  delegate_to: localhost
+
+- name: Base | Check the ISO authoring tool
+  ansible.builtin.fail:
+    msg: >-
+      xorriso não encontrado no controller. Ele é necessário para extrair a ISO
+      do Ubuntu e regravá-la com o seed do autoinstall.
+      Instale com: apt-get install -y xorriso  (Debian/Ubuntu)
+      ou: brew install xorriso  (macOS).
+  when: xorriso_bin.stdout | trim == ''

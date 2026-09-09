@@ -1,0 +1,48 @@
+#cloud-config
+# Seed NoCloud consumido pelo subiquity (Ubuntu Server autoinstall).
+# Gerado pelo tasks/seed.yml — não edite dentro do build/.
+autoinstall:
+  version: 1
+  locale: en_US.UTF-8
+  keyboard:
+    layout: us
+
+  identity:
+    hostname: {{ vm_hostname | default(vm_name) }}
+    realname: {{ vm_username }}
+    username: {{ vm_username }}
+    password: "{% if vm_password_hash | default('') != '' %}{{ vm_password_hash }}{% else %}{{ vm_password | password_hash('sha512') }}{% endif %}"
+
+  ssh:
+    install-server: true
+    allow-pw: true
+{% if vm_ssh_public_key | default('') != '' %}
+    authorized-keys:
+      - "{{ vm_ssh_public_key }}"
+{% endif %}
+
+  # Disco inteiro numa única partição: sem LVM, sem espaço livre sobrando.
+  storage:
+    layout:
+      name: direct
+
+  packages:
+    # open-vm-tools é obrigatório: é por ele que o vCenter reporta o IP do guest.
+    - open-vm-tools
+    - python3
+    - openssh-server
+
+  late-commands:
+    # sudo sem senha para o usuário criado (os playbooks usam `become: yes`).
+    - "echo '{{ vm_username }} ALL=(ALL) NOPASSWD:ALL' > /target/etc/sudoers.d/90-vmmanager"
+    - "chmod 440 /target/etc/sudoers.d/90-vmmanager"
+{% if vm_ssh_public_key | default('') != '' %}
+    # A mesma chave no root (o padrão do sshd é PermitRootLogin prohibit-password,
+    # que aceita chave).
+    - "curtin in-target --target=/target -- bash -c \"install -d -m 700 /root/.ssh && echo '{{ vm_ssh_public_key }}' >> /root/.ssh/authorized_keys && chmod 600 /root/.ssh/authorized_keys\""
+{% endif %}
+    # /var/lib/cloud/instance/boot-finished é o marcador que o vm_manager
+    # (Runner.wait_boot) checa via SSH. No sistema instalado quem o cria é o
+    # próprio cloud-init no primeiro boot; isto aqui é só a rede de segurança
+    # para o caso de o cloud-init não estar presente.
+    - "curtin in-target --target=/target -- bash -c \"command -v cloud-init >/dev/null 2>&1 || (mkdir -p /var/lib/cloud/instance && touch /var/lib/cloud/instance/boot-finished)\""
