@@ -158,36 +158,46 @@
   delegate_to: '{{ vcenter_address }}'
   register: powerstate
 
-# O instalador live também roda o open-vm-tools, então esperar "tools ok" não
-# diz que a instalação acabou. O que separa os dois é o hostname reportado pelo
-# guest: no live é 'ubuntu-server', no sistema instalado é o nosso vm_hostname.
+# O instalador live também roda o open-vm-tools e também pega IP, então nem
+# "tools ok" nem "já tem IP" dizem que a instalação acabou. O que separa os dois
+# é o hostname reportado pelo guest: no live é 'ubuntu-server', no sistema
+# instalado é o nosso vm_hostname.
+#
+# O schema 'summary' do módulo NÃO expõe esse campo (devolve hw_*, ipv4,
+# guest_tools_status...), por isso aqui vai o schema 'vsphere' pedindo
+# guest.hostName direto da API.
 - name: Wait for the autoinstall to finish (up to 60 min)
   community.vmware.vmware_guest_info:
     <<: *esxi_login
     name: '{{ vm_name }}'
+    schema: vsphere
+    properties:
+      - guest.hostName
+      - guest.ipAddress
   delegate_to: '{{ vcenter_address }}'
   register: vmfacts
   retries: 240
   delay: 15
   until: >-
-    vmfacts['instance'] is defined
-    and vmfacts['instance']['hostname'] is defined
-    and vmfacts['instance']['hostname'] | default('') | lower
-        == (vm_hostname | default(vm_name)) | lower
+    (vmfacts.instance.guest.hostName | default('', true) | lower).split('.')[0]
+    == ((vm_hostname | default(vm_name)) | lower)
 
 - name: Wait for the VM's IP Address via VMware tools
   community.vmware.vmware_guest_info:
     <<: *esxi_login
     name: '{{ vm_name }}'
+    schema: vsphere
+    properties:
+      - guest.ipAddress
   delegate_to: '{{ vcenter_address }}'
   register: vmfacts
   retries: 30
   delay: 15
-  until: vmfacts['instance'] is defined and vmfacts['instance']['ipv4'] is defined and vmfacts['instance']['ipv4'] != ''
+  until: (vmfacts.instance.guest.ipAddress | default('', true)) != ''
 
 - name: Get IP
   set_fact:
-    ubuntu_ip: "{{ vmfacts['instance']['ipv4'] }}"
+    ubuntu_ip: "{{ vmfacts.instance.guest.ipAddress }}"
 
 - debug: msg="IP Address - {{ ubuntu_ip }}"
 
