@@ -23,7 +23,34 @@
     $PY -m pip install --no-cache-dir $PKGS \
       || $PY -m pip install --no-cache-dir --break-system-packages $PKGS
   delegate_to: localhost
+  register: controller_deps_install
+  failed_when: false
   when: controller_deps.rc != 0 or (install_controller_deps | default(false) | bool)
+
+# Sem pyvmomi no python do ansible os módulos community.vmware falham logo
+# adiante com uma mensagem que não diz o que fazer; melhor parar aqui.
+- name: Base | Check the controller python packages again
+  ansible.builtin.command: '{{ ansible_playbook_python }} -c "import pyVmomi, jmespath"'
+  register: controller_deps_final
+  changed_when: false
+  failed_when: false
+  delegate_to: localhost
+  when: controller_deps.rc != 0
+
+- name: Base | Fail when the controller is missing pyvmomi
+  ansible.builtin.fail:
+    msg: >-
+      O python do ansible ({{ ansible_playbook_python }}) não tem pyvmomi e a
+      instalação automática falhou
+      ({{ (controller_deps_install.stderr | default('sem pip?')) | trim }}).
+      Instale no MESMO interpretador que roda o ansible:
+      {{ ansible_playbook_python }} -m pip install
+      git+https://github.com/helviojunior/pyvmomi jmespath netaddr requests
+      (acrescente --break-system-packages no Debian 12+; se faltar o pip,
+      instale o python3-pip).
+  when:
+    - controller_deps.rc != 0
+    - controller_deps_final.rc | default(1) != 0
 
 - name: Base | Check required variables
   ansible.builtin.assert:
