@@ -13,7 +13,7 @@
   gather_facts: false
 
   vars:
-    ansible_python_interpreter: "/usr/bin/python3"
+    ansible_python_interpreter: "{{ ansible_playbook_python }}"
 
   pre_tasks:
     # vars.yml é opcional: o vm_manager passa as variáveis por -e @arquivo.
@@ -43,7 +43,7 @@
   gather_facts: false
 
   vars:
-    ansible_python_interpreter: "/usr/bin/python3"
+    ansible_python_interpreter: "{{ ansible_playbook_python }}"
     vcenter_address: '{{ hostvars[inventory_hostname]["inventory_hostname"] }}'
 
   pre_tasks:

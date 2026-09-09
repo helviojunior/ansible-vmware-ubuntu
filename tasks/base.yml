@@ -1,18 +1,29 @@
 ---
 # Dependências do controller (a máquina que roda o ansible).
 #
-# Por padrão nada é instalado: o container do vm_manager já traz o pyvmomi
-# (fork com o fix da licença free do ESXi), o jmespath e o requests. Para uma
-# estação limpa, rode com -e install_controller_deps=true.
-- name: Base | Install controller python packages
-  ansible.builtin.pip:
-    state: present
-    name:
-      - jmespath
-      - netaddr
-      - requests
+# Os módulos community.vmware rodam no python do ansible (ansible_playbook_python),
+# que não é necessariamente o mesmo onde o pyvmomi foi instalado — num container
+# com ansible do apt e pyvmomi no python do app, por exemplo, o módulo falha com
+# "Failed to import the required Python library (PyVmomi)".
+- name: Base | Check the controller python packages
+  ansible.builtin.command: '{{ ansible_playbook_python }} -c "import pyVmomi, jmespath"'
+  register: controller_deps
+  changed_when: false
+  failed_when: false
   delegate_to: localhost
-  when: install_controller_deps | default(false) | bool
+
+# pyvmomi vem do fork do helviojunior por causa do fix da limitação de licença
+# free do ESXi. O --break-system-packages cobre o PEP 668 (Debian 12+); pip
+# antigo não conhece a flag, daí a segunda tentativa.
+- name: Base | Install the controller python packages
+  ansible.builtin.shell: |
+    set -e
+    PY="{{ ansible_playbook_python }}"
+    PKGS="git+https://github.com/helviojunior/pyvmomi jmespath netaddr requests"
+    $PY -m pip install --no-cache-dir $PKGS \
+      || $PY -m pip install --no-cache-dir --break-system-packages $PKGS
+  delegate_to: localhost
+  when: controller_deps.rc != 0 or (install_controller_deps | default(false) | bool)
 
 - name: Base | Check required variables
   ansible.builtin.assert:

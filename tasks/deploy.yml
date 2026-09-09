@@ -21,7 +21,6 @@
 - name: Add vSphere
   add_host:
     name: '{{ vcenter_address }}'
-    connection: local
     ansible_connection: local
 
 - name: Gather vSphere schema information
