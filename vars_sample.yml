@@ -9,7 +9,10 @@ vm_iso: "ubuntu-22.04.5-live-server-amd64.iso"
 vm_iso_url: "https://releases.ubuntu.com/22.04/ubuntu-22.04.5-live-server-amd64.iso"
 
 # VM data
+# vm_name e o nome no inventario do vCenter; vm_annotation e a descricao (o
+# vm_manager usa vm-<hex do deploy> no nome e o nome digitado na descricao).
 vm_name: testvm
+vm_annotation: "VM de teste"
 vm_hostname: testvm
 vm_network: "VM Network"
 vm_disk_gb: 40

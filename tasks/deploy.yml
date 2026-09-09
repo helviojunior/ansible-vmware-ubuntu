@@ -104,6 +104,9 @@
     name: '{{ vm_name }}'
     state: present
     guest_id: ubuntu64Guest
+    # Descricao da VM no vCenter. O vm_name e um id (vm-<hex>), entao e aqui que
+    # fica o nome legivel dado pelo usuario.
+    annotation: '{{ vm_annotation | default("") }}'
     cdrom:
       - controller_number: 0
         unit_number: 0

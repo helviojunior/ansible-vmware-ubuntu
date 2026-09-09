@@ -58,7 +58,9 @@ O IP da VM fica em `output/<vm_name>_ip.txt`.
 | `vm_iso` / `vm_iso_url` | ISO do Ubuntu Server (live server). A ISO baixada fica em `iso_cache/` |
 | `vm_iso_path` | ISO já resolvida por um cache externo — com ela o playbook não baixa nada |
 | `vm_iso_sha256` | sha256 esperado da ISO; conferido no download e no reaproveitamento |
-| `vm_name` / `vm_hostname` | nome da VM e hostname do sistema instalado |
+| `vm_name` | nome da VM no inventário do vCenter (o vm_manager usa `vm-<hex do deploy>`) |
+| `vm_annotation` | descrição da VM no vCenter — é onde fica o nome legível |
+| `vm_hostname` | hostname do sistema instalado |
 | `vm_network` | portgroup |
 | `vm_disk_gb` / `vm_memory_mb` / `vm_num_cpus` | dimensionamento |
 | `vm_username` / `vm_password` | identidade criada pelo autoinstall |
