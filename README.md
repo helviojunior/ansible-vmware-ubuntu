@@ -52,6 +52,8 @@ O IP da VM fica em `output/<vm_name>_ip.txt`.
 | `vcenter_login` / `vcenter_password` | credenciais do ESXi/vCenter |
 | `vcenter_datacenter` / `vcenter_datastore` | destino da VM (`ha-datacenter`/`datastore1` no ESXi standalone) |
 | `vm_iso` / `vm_iso_url` | ISO do Ubuntu Server (live server). A ISO baixada fica em `iso_cache/` |
+| `vm_iso_path` | ISO já resolvida por um cache externo — com ela o playbook não baixa nada |
+| `vm_iso_sha256` | sha256 esperado da ISO; conferido no download e no reaproveitamento |
 | `vm_name` / `vm_hostname` | nome da VM e hostname do sistema instalado |
 | `vm_network` | portgroup |
 | `vm_disk_gb` / `vm_memory_mb` / `vm_num_cpus` | dimensionamento |
@@ -101,8 +103,14 @@ Detalhes que valem a pena saber:
 - **Espaço em disco** no controller: durante o deploy convivem a ISO original em
   cache, a árvore extraída e a ISO gerada (~3 GB cada, nas ISOs recentes). Ao
   final o playbook apaga `build/<slug>/` e a ISO de autoinstall — só a ISO
-  original permanece em `iso_cache/`, para os próximos deploys não a baixarem de
-  novo. Rode com `-e keep_build_files=true` para manter tudo e depurar o seed.
+  original permanece em cache, para os próximos deploys não a baixarem de novo.
+  Rode com `-e keep_build_files=true` para manter tudo e depurar o seed.
+- **Cache da ISO original**: `iso_cache/` por padrão, dentro do repo. Quando quem
+  chama já tem um cache próprio (o vm_manager tem um global, compartilhado por
+  todos os deploys), basta passar `vm_iso_path` apontando o arquivo — o playbook
+  usa e não baixa nada.
+- **Datastore**: a ISO customizada é apagada do datastore assim que a mídia é
+  solta da VM; as ISOs stock que estiverem lá não são tocadas.
 
 ## Common error
 

@@ -13,7 +13,9 @@
 
 - name: Seed | Set derived paths
   set_fact:
-    iso_src: "{{ cache_dir }}/{{ iso_name }}"
+    # vm_iso_path é o arquivo já resolvido pelo cache global do orquestrador
+    # (vm_manager). Sem ele, o cache local do repo (iso_cache/) é usado.
+    iso_src: "{{ vm_iso_path if (vm_iso_path | default('')) != '' else (cache_dir ~ '/' ~ iso_name) }}"
     build_dir: "build/{{ vm_slug }}"
     iso_root: "build/{{ vm_slug }}/iso_root"
     opts_file: "build/{{ vm_slug }}/mkisofs_opts.txt"
@@ -28,17 +30,39 @@
     - '{{ build_dir }}'
   delegate_to: localhost
 
+- name: Seed | Check the source ISO
+  ansible.builtin.stat:
+    path: '{{ iso_src }}'
+    checksum_algorithm: sha256
+    get_checksum: '{{ (vm_iso_sha256 | default("")) != "" }}'
+  register: iso_stat
+  delegate_to: localhost
+
+# Só baixa quando o arquivo não veio pronto: com vm_iso_path o orquestrador já
+# resolveu a ISO no cache global (e conferiu o sha256).
 - name: Seed | Download the Ubuntu Server ISO
   ansible.builtin.get_url:
     url: '{{ vm_iso_url }}'
     dest: '{{ iso_src }}'
+    checksum: "{{ ('sha256:' ~ vm_iso_sha256) if (vm_iso_sha256 | default('')) != '' else omit }}"
     timeout: 120
   delegate_to: localhost
-  when: vm_iso_url | default('') != ''
+  when:
+    - not iso_stat.stat.exists
+    - vm_iso_url | default('') != ''
+  register: iso_download
 
-- name: Seed | Check the source ISO
+- name: Seed | Report the source ISO
+  ansible.builtin.debug:
+    msg: >-
+      ISO de origem: {{ iso_src }}
+      ({{ 'baixada agora' if (iso_download is defined and iso_download is changed) else 'reaproveitada do cache' }})
+
+- name: Seed | Check the source ISO again
   ansible.builtin.stat:
     path: '{{ iso_src }}'
+    checksum_algorithm: sha256
+    get_checksum: '{{ (vm_iso_sha256 | default("")) != "" }}'
   register: iso_stat
   delegate_to: localhost
 
@@ -46,6 +70,14 @@
   ansible.builtin.fail:
     msg: 'ISO não encontrada em {{ iso_src }} — informe vm_iso_url ou deixe o arquivo no cache.'
   when: not iso_stat.stat.exists
+
+- name: Seed | Fail when the cached ISO does not match the expected sha256
+  ansible.builtin.fail:
+    msg: 'sha256 da ISO em {{ iso_src }} não confere com vm_iso_sha256.'
+  when:
+    - (vm_iso_sha256 | default('')) != ''
+    - iso_stat.stat.checksum is defined
+    - iso_stat.stat.checksum != vm_iso_sha256
 
 - name: Seed | Extract the ISO
   ansible.builtin.shell: |

@@ -39,3 +39,11 @@ keep_build_files: false
 
 # Diretório de cache da ISO original.
 iso_cache_dir: "iso_cache"
+
+# Caminho local da ISO já resolvida por um cache externo (o vm_manager passa o
+# arquivo do cache global do orquestrador). Vazio = usa o iso_cache_dir local.
+vm_iso_path: ""
+
+# sha256 esperado da ISO original. Quando informado, é conferido no download e
+# no reaproveitamento do cache.
+vm_iso_sha256: ""
